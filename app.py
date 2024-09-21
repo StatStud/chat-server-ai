@@ -67,4 +67,4 @@ def get_history():
     return jsonify({"history": conversation_history[personality]})
 
 if __name__ == '__main__':
-    app.run(debug=True, host="chat-server-ai.netlify.app")
+    app.run(debug=True, host="0.0.0.0", port=5000)
