@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Chat Interface</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/axios/0.21.1/axios.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            height: 100vh;
+        }
+        #personalities {
+            width: 200px;
+            background-color: #f0f0f0;
+            padding: 20px;
+            overflow-y: auto;
+        }
+        #chat-container {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+            height: 100vh;
+            width: 100vh;
+            box-sizing: border-box;
+        }
+        #chat-log {
+            flex-grow: 1;
+            overflow-y: auto;
+            border: 1px solid #ccc;
+            padding: 10px;
+            margin-bottom: 10px;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+        }
+        #user-input-container {
+            position: relative;
+        }
+        #user-input {
+            width: 100%;
+            padding: 10px;
+            box-sizing: border-box;
+        }
+        #user-input:disabled {
+            background-color: #f0f0f0;
+            color: #888;
+        }
+        .personality-btn {
+            display: block;
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 10px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        .personality-btn:hover {
+            background-color: #45a049;
+        }
+        .personality-btn.active {
+            background-color: #ff0000;
+        }
+        .message {
+            margin-bottom: 10px;
+        }
+        .user {
+            color: blue;
+        }
+        .assistant {
+            color: green;
+        }
+        .message pre {
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            background-color: #f4f4f4;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 10px;
+        }
+        #typing-indicator {
+            display: none;
+            position: absolute;
+            top: -30px;
+            left: 0;
+            background-color: #f0f0f0;
+            padding: 5px 10px;
+            border-radius: 10px;
+            font-size: 14px;
+        }
+        .typing-dot {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: #333;
+            animation: typing 1.4s infinite ease-in-out both;
+        }
+        .typing-dot:nth-child(1) { animation-delay: -0.32s; }
+        .typing-dot:nth-child(2) { animation-delay: -0.16s; }
+
+        @keyframes typing {
+            0%, 80%, 100% { transform: scale(0); }
+            40% { transform: scale(1); }
+        }
+    </style>
+</head>
+<body>
+    <div id="personalities">
+        {% for key, value in personalities.items() %}
+        <button class="personality-btn" data-personality="{{ key }}">{{ key.capitalize() }}</button>
+        {% endfor %}
+    </div>
+    <div id="chat-container">
+        <div id="chat-log"></div>
+        <div id="user-input-container">
+            <div id="typing-indicator">
+                Assistant is typing<span class="typing-dot"></span><span class="typing-dot"></span><span class="typing-dot"></span>
+            </div>
+            <textarea id="user-input" placeholder="Type your message here..." onkeypress="handleKeyPress(event)"></textarea>
+        </div>
+    </div>
+
+    <script>
+        let currentPersonality = 'snarky';
+        const userInput = document.getElementById('user-input');
+        const typingIndicator = document.getElementById('typing-indicator');
+
+        function setPersonality(personality) {
+            currentPersonality = personality;
+            
+            // Update active button
+            document.querySelectorAll('.personality-btn').forEach(btn => btn.classList.remove('active'));
+            document.querySelector(`.personality-btn[data-personality="${personality}"]`).classList.add('active');
+
+            // Fetch and display chat history for the selected personality
+            axios.post('/get_history', {
+                personality: personality
+            })
+            .then(function (response) {
+                const chatLog = document.getElementById('chat-log');
+                chatLog.innerHTML = '';
+                response.data.history.forEach(message => {
+                    appendMessage(message.role, message.content);
+                });
+            })
+            .catch(function (error) {
+                console.error('Error:', error);
+            });
+        }
+
+        function handleKeyPress(event) {
+            if (event.key === 'Enter' && !event.shiftKey && !userInput.disabled) {
+                // Prevents adding a new line when pressing Enter without Shift
+                event.preventDefault();  
+                sendMessage();
+            }
+        }
+
+
+        function sendMessage() {
+            const message = userInput.value.trim();
+            if (message) {
+                appendMessage('user', message);
+                userInput.value = '';
+                
+                // Disable input and show typing indicator
+                setInputState(false);
+
+                axios.post('/chat', {
+                    personality: currentPersonality,
+                    message: message
+                })
+                .then(function (response) {
+                    appendMessage('assistant', response.data.response);
+                    // Enable input and hide typing indicator
+                    setInputState(true);
+                })
+                .catch(function (error) {
+                    console.error('Error:', error);
+                    // Enable input and hide typing indicator in case of error
+                    setInputState(true);
+                });
+            }
+        }
+
+        function setInputState(enabled) {
+            userInput.disabled = !enabled;
+            typingIndicator.style.display = enabled ? 'none' : 'block';
+        }
+
+        function appendMessage(role, content) {
+            const chatLog = document.getElementById('chat-log');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${role}`;
+            
+            // Escape HTML characters to prevent XSS
+            const escapeHtml = (unsafe) => {
+                return unsafe
+                    .replace(/&/g, "&amp;")
+                    .replace(/</g, "&lt;")
+                    .replace(/>/g, "&gt;")
+                    .replace(/"/g, "&quot;")
+                    .replace(/'/g, "&#039;");
+            };
+            
+            // Format the content
+            const formattedContent = escapeHtml(content)
+                .replace(/\n/g, '<br>')  // Replace newlines with <br> tags
+                .replace(/```([\s\S]*?)```/g, '<pre>$1</pre>');  // Wrap code blocks in <pre> tags
+            
+            messageDiv.innerHTML = `<strong>${role.charAt(0).toUpperCase() + role.slice(1)}:</strong> ${formattedContent}`;
+            chatLog.appendChild(messageDiv);
+            chatLog.scrollTop = chatLog.scrollHeight;
+        }
+
+        // Set up event listeners for personality buttons
+        document.querySelectorAll('.personality-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                setPersonality(this.getAttribute('data-personality'));
+            });
+        });
+
+        // Initialize with the default personality
+        setPersonality(currentPersonality);
+    </script>
+</body>
+</html>
